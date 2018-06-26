@@ -1,0 +1,23 @@
+{
+  "name": "build-worker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "monicabaluna",
+  "license": "ISC",
+  "dependencies": {
+    "async-file": "^2.0.2",
+    "bunyan": "^1.8.12",
+    "docker-file-parser": "^1.0.3",
+    "http-status-codes": "^1.3.0",
+    "node-docker-api": "^1.1.22",
+    "request": "^2.87.0",
+    "request-promise": "^4.2.2",
+    "sha1": "^1.1.1",
+    "tar-fs": "^1.16.3",
+    "unzip": "^0.1.11"
+  }
+}
