@@ -1,2 +1,4 @@
 downloaded*
 node_modules*
+credentials.json
+tmp*
