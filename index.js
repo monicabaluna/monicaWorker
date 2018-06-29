@@ -2,14 +2,12 @@
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('container')
 const execSync = require('child_process').execSync
-const nodegit = require('nodegit')
 const fs = require('fs')
-const httpStatus = require('http-status-codes')
-const request = require('request')
 const unzip = require('unzip')
 
-const fsUtils = require('./file-utils.js')
 const dockerUtils = require('./docker-utils.js')
+const fsUtils = require('./file-utils.js')
+const gitUtils = require('./git-utils.js')
 
 const clientToken = "1234"
 const address = "http://localhost:3001/api/v1/archives?filePath=boop.zip"
@@ -21,47 +19,32 @@ const username = credentials.username
 const password = credentials.password
 const registry = "docker.io"
 
-const git_address = "https://github.com/monicabaluna/wyliTheRepo.git"
-const git_token = credentials.git_token
-const git_branch = "branch1"
-const git_commit_sha = "4fd86adc8d128f1e070738d901611b73e9708400"
+const sourceType = "git"
+const gitAddress = "https://github.com/monicabaluna/wyliTheRepo.git"
+const gitToken = credentials.gitToken
+const gitBranch = "branch1"
+const gitCommitSHA = "4fd86adc8d128f1e070738d901611b73e9708400"
 
-// TODO move git functs to separate file
-function checkOutCommit(repo, commit_sha) {
-  console.log('Changing HEAD to ', commit_sha);
-  repo.setHeadDetached(commit_sha, repo.defaultSignature(), "Checkout: HEAD " + commit_sha);
-  console.log('Checking out HEAD');
-  return nodegit.Checkout.head(repo, {
-    checkoutStrategy: nodegit.Checkout.STRATEGY.FORCE
-  });
-}
 
 async function main () {
   try {
-    // =============download archive====================
-    // await fsUtils.downloadArchive(address, downloadPath, clientToken, 1)
-    // await fsUtils.extractAsync(downloadPath, contentPath)
 
+    switch (sourceType) {
 
-    // =============git clone====================
-    // source, branch, sha
-    // TODO check git error codes
+      case "zip":
+        await fsUtils.downloadArchive(address, downloadPath, clientToken, 1)
+        await fsUtils.extractAsync(downloadPath, contentPath)
+        break;
 
-    let cloneOptions = {}
-    cloneOptions.checkoutBranch = git_branch
-    cloneOptions.fetchOpts = {
-      callbacks: {
-        certificateCheck: function() { return 1; },
-        credentials: function() {
-          return nodegit.Cred.userpassPlaintextNew(git_token, "x-oauth-basic");
-        }}};
-    
-    let cloneRepo = await nodegit.Clone(git_address, contentPath, cloneOptions)
-    let repository = await nodegit.Repository.open(contentPath)
-    checkOutCommit(repository, git_commit_sha)
+      case "git":
+        let repository = await gitUtils.cloneRepoBranch(gitAddress, gitBranch, gitToken, contentPath)
+        gitUtils.checkOutCommit(repository, gitCommitSHA)
+        break;
 
+      default:
+        throw Error("Invalid source type")
+    }
 
-// =========common==========
     let imageConfiguration = JSON.parse(
       await asyncFs.readFile(`${contentPath}/wyliodrin.json`, 'utf8')
     )
@@ -69,15 +52,18 @@ async function main () {
     let fullTag = await dockerUtils.buildAppImage(contentPath, username,
       imageConfiguration.repository, imageConfiguration.tag)
     execSync(`docker login -u ${username} -p ${password} ${registry}`)
-    let code = execSync(`docker push ${fullTag}`)
+    execSync(`docker push ${fullTag}`)
 
-    //TODO delete contents and zip
-
+    await fsUtils.clean(sourceType, contentPath, downloadPath)
   }
   catch(err) {
-    if (typeof err.cmd === 'undefined' || err.cmd.substring(0, 7) !== "docker ")
-      console.error(err)
+    if (typeof err.cmd === 'undefined' || err.cmd.substring(0, 7) !== "docker ") {
+      throw Error(err)
+    }
+    else {
+      throw Error("Docker login or push failed")
+    }
   }
 }
 
-main()
+main().catch(err => console.error(err));

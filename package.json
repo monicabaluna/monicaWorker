@@ -11,8 +11,8 @@
   "dependencies": {
     "async-file": "^2.0.2",
     "bunyan": "^1.8.12",
+    "del": "^3.0.0",
     "docker-file-parser": "^1.0.3",
-    "http-status-codes": "^1.3.0",
     "node-docker-api": "^1.1.22",
     "nodegit": "^0.22.1",
     "path": "^0.12.7",

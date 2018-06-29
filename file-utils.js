@@ -1,9 +1,9 @@
 'use strict'
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('container')
+const del = require('del');
 const execSync = require('child_process').execSync
 const fs = require('fs')
-const httpStatus = require('http-status-codes')
 const request = require('request')
 const sha = require('sha1')
 const unzip = require('unzip')
@@ -79,8 +79,16 @@ async function downloadArchive (address, downloadPath, token, retriesLeft) {
   return Promise.reject(new Error("Error downloading archive."))
 }
 
+async function clean (sourceType, contentPath, downloadPath) {
+  if (sourceType === "zip")
+    await del([downloadPath])
+
+  await del([contentPath + '/*', contentPath])
+}
+
 module.exports = {
   downloadArchive,
   extractAsync,
-  promisifyTarStream
+  promisifyTarStream,
+  clean
 }
