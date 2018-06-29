@@ -9,6 +9,8 @@
   "author": "monicabaluna",
   "license": "ISC",
   "dependencies": {
+    "amqp": "^0.2.6",
+    "amqp-stream": "^0.1.0",
     "async-file": "^2.0.2",
     "bunyan": "^1.8.12",
     "del": "^3.0.0",

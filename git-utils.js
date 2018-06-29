@@ -1,6 +1,6 @@
 const nodegit = require('nodegit')
 
-function checkOutCommit(repo, commitSHA) {
+async function checkOutCommit(repo, commitSHA) {
   let code
 
   console.log('Changing HEAD to ', commitSHA);
@@ -10,7 +10,7 @@ function checkOutCommit(repo, commitSHA) {
   }
 
   console.log('Checking out HEAD');
-  return nodegit.Checkout.head(repo, {
+  return await nodegit.Checkout.head(repo, {
     checkoutStrategy: nodegit.Checkout.STRATEGY.FORCE
   });
 }

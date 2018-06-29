@@ -1,4 +1,7 @@
 'use strict'
+
+const amqp = require( 'amqp' )
+const amqp_stream = require( 'amqp-stream' );
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('container')
 const execSync = require('child_process').execSync
@@ -9,36 +12,63 @@ const dockerUtils = require('./docker-utils.js')
 const fsUtils = require('./file-utils.js')
 const gitUtils = require('./git-utils.js')
 
-const clientToken = "1234"
-const address = "http://localhost:3001/api/v1/archives?filePath=boop.zip"
 const tmp = "tmp"
 const downloadPath = require("path").join(__dirname, tmp + ".zip");
 const contentPath = require("path").join(__dirname, tmp);
-const credentials = require('./credentials.json')
-const username = credentials.username
-const password = credentials.password
-const registry = "docker.io"
 
-const sourceType = "git"
-const gitAddress = "https://github.com/monicabaluna/wyliTheRepo.git"
-const gitToken = credentials.gitToken
-const gitBranch = "branch1"
-const gitCommitSHA = "4fd86adc8d128f1e070738d901611b73e9708400"
+function parseMessage(message) {
+  let received = JSON.parse(message)
+  let result = {}
 
+  if (typeof received === "undefined")
+    throw Error("Invalid message format")
 
-async function main () {
+  result.sourceType = received.sourceType
+  result.downloadAddress = received.downloadAddress
+  result.clientToken = received.clientToken
+  result.registry = received.registry
+  result.registryPassword = received.registryPassword
+  result.registryUsername = received.registryUsername
+
+  switch (received.sourceType) {
+
+    case "zip":
+      break;
+
+    case "git":
+      if (typeof received.gitBranch === "undefined") {
+        result.gitBranch = "master"
+      }
+
+      if (typeof received.gitToken === "undefined") {
+        result.gitToken = ""
+      } else {
+        result.gitToken = received.gitToken 
+      }
+
+      result.gitCommitSHA = received.gitCommitSHA
+  }
+
+  return result
+}
+
+async function build (sourceType, downloadAddress, clientToken, gitToken, 
+  registry, registryUsername, registryPassword, gitBranch, gitCommitSHA) {
+
   try {
 
     switch (sourceType) {
 
       case "zip":
-        await fsUtils.downloadArchive(address, downloadPath, clientToken, 1)
+        await fsUtils.downloadArchive(downloadAddress, downloadPath, clientToken, 1)
         await fsUtils.extractAsync(downloadPath, contentPath)
         break;
 
       case "git":
-        let repository = await gitUtils.cloneRepoBranch(gitAddress, gitBranch, gitToken, contentPath)
-        gitUtils.checkOutCommit(repository, gitCommitSHA)
+        let repository = await gitUtils.cloneRepoBranch(downloadAddress, gitBranch, gitToken, contentPath)
+
+        if (typeof gitCommitSHA !== undefined)
+          await gitUtils.checkOutCommit(repository, gitCommitSHA)
         break;
 
       default:
@@ -49,10 +79,11 @@ async function main () {
       await asyncFs.readFile(`${contentPath}/wyliodrin.json`, 'utf8')
     )
 
-    let fullTag = await dockerUtils.buildAppImage(contentPath, username,
+    let fullTag = await dockerUtils.buildAppImage(contentPath, registryUsername,
       imageConfiguration.repository, imageConfiguration.tag)
-    execSync(`docker login -u ${username} -p ${password} ${registry}`)
+    execSync(`docker login -u ${registryUsername} -p ${registryPassword} ${registry}`)
     execSync(`docker push ${fullTag}`)
+    execSync("docker logout")
 
     await fsUtils.clean(sourceType, contentPath, downloadPath)
   }
@@ -66,4 +97,22 @@ async function main () {
   }
 }
 
-main().catch(err => console.error(err));
+let connection = amqp.createConnection();
+amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, function ( err, rpc_stream ) {
+  rpc_stream.on( 'correlatedRequest', function (correlatedStream) {
+    correlatedStream.on( 'data', function (buf) {
+
+      let parameters = parseMessage(buf.toString())
+      build (parameters.sourceType, parameters.downloadAddress, parameters.clientToken,
+        parameters.gitToken, parameters.registry, parameters.registryUsername,
+        parameters.registryPassword, parameters.gitBranch, parameters.gitCommitSHA)
+      .then(() => correlatedStream.write("we made it!"))
+      .then(() => correlatedStream.end())
+      .catch(err => {
+        console.error(err);
+        correlatedStream.write("stupid ho [-(");
+        correlatedStream.end();
+      })      
+    });
+  });
+});
