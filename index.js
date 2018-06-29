@@ -77,17 +77,27 @@ async function fetchSource(sourceType, downloadAddress, clientToken,
   }
 }
 
-async function build (sourceType, downloadAddress, clientToken, gitToken, 
-  registry, registryUsername, registryPassword, gitBranch, gitCommitSHA) {
+async function buildImage(registry, registryUsername) {
 
   try {
-
     let imageConfiguration = JSON.parse(
       await asyncFs.readFile(`${contentPath}/wyliodrin.json`, 'utf8')
     )
 
     let fullTag = await dockerUtils.buildAppImage(contentPath, registryUsername,
       imageConfiguration.repository, imageConfiguration.tag)
+
+    return fullTag
+  }
+  catch(err) {
+    throw Error(err)
+  }
+}
+
+
+async function pushImage(sourceType, fullTag, registry, registryUsername, registryPassword) {
+
+  try {
     execSync(`docker login -u ${registryUsername} -p ${registryPassword} ${registry}`)
     execSync(`docker push ${fullTag}`)
     execSync("docker logout")
@@ -117,10 +127,13 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
 
       .then(() => {
         correlatedStream.write("FETCH_OK");
-        build(parameters.sourceType, parameters.downloadAddress, parameters.clientToken,
-          parameters.gitToken, parameters.registry, parameters.registryUsername,
-          parameters.registryPassword, parameters.gitBranch, parameters.gitCommitSHA)
+        return buildImage(parameters.registry, parameters.registryUsername)
         })
+      .then(fullTag => {
+        correlatedStream.write("BUILD_OK " + fullTag);
+        pushImage(parameters.sourceType, fullTag, parameters.registry, parameters.registryUsername,
+          parameters.registryPassword)
+      })
       .then(() => {correlatedStream.write("we made it!"); correlatedStream.end()})
       .catch(err => {
         console.error(err);
