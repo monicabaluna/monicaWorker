@@ -52,11 +52,9 @@ function parseMessage(message) {
   return result
 }
 
-async function build (sourceType, downloadAddress, clientToken, gitToken, 
-  registry, registryUsername, registryPassword, gitBranch, gitCommitSHA) {
-
+async function fetchSource(sourceType, downloadAddress, clientToken,
+  gitToken, gitBranch, gitCommitSHA) {
   try {
-
     switch (sourceType) {
 
       case "zip":
@@ -74,6 +72,15 @@ async function build (sourceType, downloadAddress, clientToken, gitToken,
       default:
         throw Error("Invalid source type")
     }
+  } catch(err) {
+    throw Error(err)
+  }
+}
+
+async function build (sourceType, downloadAddress, clientToken, gitToken, 
+  registry, registryUsername, registryPassword, gitBranch, gitCommitSHA) {
+
+  try {
 
     let imageConfiguration = JSON.parse(
       await asyncFs.readFile(`${contentPath}/wyliodrin.json`, 'utf8')
@@ -103,11 +110,18 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
     correlatedStream.on( 'data', function (buf) {
 
       let parameters = parseMessage(buf.toString())
-      build (parameters.sourceType, parameters.downloadAddress, parameters.clientToken,
-        parameters.gitToken, parameters.registry, parameters.registryUsername,
-        parameters.registryPassword, parameters.gitBranch, parameters.gitCommitSHA)
-      .then(() => correlatedStream.write("we made it!"))
-      .then(() => correlatedStream.end())
+
+      fetchSource(parameters.sourceType, parameters.downloadAddress,
+        parameters.clientToken, parameters.gitToken, parameters.gitBranch,
+        parameters.gitCommitSHA)
+
+      .then(() => {
+        correlatedStream.write("FETCH_OK");
+        build(parameters.sourceType, parameters.downloadAddress, parameters.clientToken,
+          parameters.gitToken, parameters.registry, parameters.registryUsername,
+          parameters.registryPassword, parameters.gitBranch, parameters.gitCommitSHA)
+        })
+      .then(() => {correlatedStream.write("we made it!"); correlatedStream.end()})
       .catch(err => {
         console.error(err);
         correlatedStream.write("stupid ho [-(");
@@ -116,3 +130,4 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
     });
   });
 });
+
