@@ -84,6 +84,8 @@ async function clean (sourceType, contentPath, downloadPath) {
     await del([downloadPath])
 
   await del([contentPath + '/*', contentPath])
+
+  console.log("Successfully removed resources.")
 }
 
 module.exports = {

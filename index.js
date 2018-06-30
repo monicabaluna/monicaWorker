@@ -16,6 +16,9 @@ const tmp = "tmp"
 const downloadPath = require("path").join(__dirname, tmp + ".zip");
 const contentPath = require("path").join(__dirname, tmp);
 
+// todo docker logout
+// todo unhandled promise
+
 function parseMessage(message) {
   let received = JSON.parse(message)
   let result = {}
@@ -55,6 +58,8 @@ function parseMessage(message) {
 async function fetchSource(sourceType, downloadAddress, clientToken,
   gitToken, gitBranch, gitCommitSHA) {
   try {
+    await fsUtils.clean(sourceType, contentPath, downloadPath)
+
     switch (sourceType) {
 
       case "zip":
@@ -65,7 +70,7 @@ async function fetchSource(sourceType, downloadAddress, clientToken,
       case "git":
         let repository = await gitUtils.cloneRepoBranch(downloadAddress, gitBranch, gitToken, contentPath)
 
-        if (typeof gitCommitSHA !== undefined)
+        if (typeof gitCommitSHA !== "undefined")
           await gitUtils.checkOutCommit(repository, gitCommitSHA)
         break;
 
@@ -95,22 +100,14 @@ async function buildImage(registry, registryUsername) {
 }
 
 
-async function pushImage(sourceType, fullTag, registry, registryUsername, registryPassword) {
-
+async function pushImage(fullTag, registry, registryUsername, registryPassword) {
   try {
     execSync(`docker login -u ${registryUsername} -p ${registryPassword} ${registry}`)
     execSync(`docker push ${fullTag}`)
     execSync("docker logout")
-
-    await fsUtils.clean(sourceType, contentPath, downloadPath)
   }
   catch(err) {
-    if (typeof err.cmd === 'undefined' || err.cmd.substring(0, 7) !== "docker ") {
-      throw Error(err)
-    }
-    else {
-      throw Error("Docker login or push failed")
-    }
+    throw Error("Docker login or push failed")
   }
 }
 
@@ -129,17 +126,27 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
         correlatedStream.write("FETCH_OK");
         return buildImage(parameters.registry, parameters.registryUsername)
         })
+
       .then(fullTag => {
         correlatedStream.write("BUILD_OK " + fullTag);
-        pushImage(parameters.sourceType, fullTag, parameters.registry, parameters.registryUsername,
+        pushImage(fullTag, parameters.registry, parameters.registryUsername,
           parameters.registryPassword)
+        .then(() => correlatedStream.write("PUSH_OK"))
+        .catch(err => {
+          console.error(err);
+          correlatedStream.write("ERROR " + err.toString());
+          fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+          correlatedStream.end();
+        })
       })
-      .then(() => {correlatedStream.write("we made it!"); correlatedStream.end()})
       .catch(err => {
         console.error(err);
-        correlatedStream.write("stupid ho [-(");
+        correlatedStream.write("ERROR" + err.toString());
+      })
+      .finally(() => {
+        fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
         correlatedStream.end();
-      })      
+      })
     });
   });
 });
