@@ -16,8 +16,6 @@ const tmp = "tmp"
 const downloadPath = require("path").join(__dirname, tmp + ".zip");
 const contentPath = require("path").join(__dirname, tmp);
 
-// todo docker logout
-// todo unhandled promise
 
 function parseMessage(message) {
   let received = JSON.parse(message)
@@ -131,21 +129,39 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
         correlatedStream.write("BUILD_OK " + fullTag);
         pushImage(fullTag, parameters.registry, parameters.registryUsername,
           parameters.registryPassword)
-        .then(() => correlatedStream.write("PUSH_OK"))
+        .then(() => {
+          correlatedStream.write("PUSH_OK");
+          fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+          .then(() => {
+            correlatedStream.end();
+            process.exit(0);
+          })
+        })
         .catch(err => {
           console.error(err);
           correlatedStream.write("ERROR " + err.toString());
           fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-          correlatedStream.end();
+          .then(() => {
+            correlatedStream.end();
+            process.exit(0);
+          })
         })
       })
       .catch(err => {
         console.error(err);
         correlatedStream.write("ERROR" + err.toString());
+        fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+        .then(() => {
+          correlatedStream.end();
+          process.exit(0);
+        })
       })
       .finally(() => {
         fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-        correlatedStream.end();
+        .then(() => {
+          correlatedStream.end();
+          process.exit(0);
+        })
       })
     });
   });
