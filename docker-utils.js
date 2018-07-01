@@ -1,5 +1,5 @@
 const asyncFs = require('async-file')
-// const log = require('bunyan').getLogger('container')
+// const log = require('bunyan').getLogger('worker')
 const { Docker } = require('node-docker-api')
 const execSync = require('child_process').execSync
 const fsUtils = require('./file-utils.js')

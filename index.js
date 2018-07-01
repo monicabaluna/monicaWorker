@@ -3,7 +3,7 @@
 const amqp = require( 'amqp' )
 const amqp_stream = require( 'amqp-stream' );
 const asyncFs = require('async-file')
-// const log = require('bunyan').getLogger('container')
+// const log = require('bunyan').getLogger('worker')
 const execSync = require('child_process').execSync
 const fs = require('fs')
 const unzip = require('unzip')
@@ -134,7 +134,6 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
           fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
           .then(() => {
             correlatedStream.end();
-            process.exit(0);
           })
         })
         .catch(err => {
@@ -143,7 +142,6 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
           fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
           .then(() => {
             correlatedStream.end();
-            process.exit(0);
           })
         })
       })
@@ -153,14 +151,12 @@ amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, functi
         fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
         .then(() => {
           correlatedStream.end();
-          process.exit(0);
         })
       })
       .finally(() => {
         fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
         .then(() => {
           correlatedStream.end();
-          process.exit(0);
         })
       })
     });
