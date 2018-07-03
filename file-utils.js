@@ -1,13 +1,12 @@
 'use strict'
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('worker')
-const del = require('del');
+const del = require('del')
 const execSync = require('child_process').execSync
 const fs = require('fs')
 const request = require('request')
 const sha = require('sha1')
 const unzip = require('unzip')
-
 
 const promisifyTarStream = stream =>
   new Promise((resolve, reject) => {
@@ -22,10 +21,11 @@ const promisifyDownloadStream = (stream, file) =>
 
     stream.on('data', data => {})
     stream.on('error', reject)
-    stream.on('end', () => {resolve(checksum)})
-    stream.on('response', function(response) {
-      if (response.statusCode / 100 != 2)
-        return reject
+    stream.on('end', () => {
+      resolve(checksum)
+    })
+    stream.on('response', function (response) {
+      if (response.statusCode / 100 != 2) return reject
       checksum = response.headers['checksum']
       response.pipe(file)
     })
@@ -56,36 +56,41 @@ async function downloadArchive (address, downloadPath, token, retriesLeft) {
 
   for (let i = 0; i <= retriesLeft; i++) {
     try {
-      file = fs.createWriteStream(downloadPath);
-      checksum = await promisifyDownloadStream(request.get(address, {
-        'auth': {
-          'bearer': token
-        }
-      }), file)
+      file = fs.createWriteStream(downloadPath)
+      checksum = await promisifyDownloadStream(
+        request.get(address, {
+          auth: {
+            bearer: token
+          }
+        }),
+        file
+      )
 
       fileContents = asyncFs.readFile(downloadPath)
 
       if (checksum !== sha(fileContents)) {
         continue
       }
-      return;
-
-    } catch(err) {
-      console.error("Error downloading archive. Retrying...")
+      return
+    } catch (err) {
+      console.error('Error downloading archive. Retrying...')
       continue
     }
   }
 
-  return Promise.reject(new Error("Error downloading archive."))
+  return Promise.reject(new Error('Error downloading archive.'))
 }
 
 async function clean (sourceType, contentPath, downloadPath) {
-  if (sourceType === "zip")
-    await del([downloadPath])
+  try {
+    if (sourceType === 'zip') await del([downloadPath])
 
-  await del([contentPath + '/*', contentPath])
+    await del([contentPath + '/*', contentPath])
+  } catch (err) {
+    console.log('some delete error: ', err)
+  }
 
-  console.log("Successfully removed resources.")
+  console.log('Successfully removed resources.')
 }
 
 module.exports = {

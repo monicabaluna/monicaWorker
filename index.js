@@ -1,7 +1,7 @@
 'use strict'
 
-const amqp = require( 'amqp' )
-const amqp_stream = require( 'amqp-stream' );
+const amqp = require('amqp')
+const amqp_stream = require('amqp-stream')
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('worker')
 const execSync = require('child_process').execSync
@@ -12,17 +12,15 @@ const dockerUtils = require('./docker-utils.js')
 const fsUtils = require('./file-utils.js')
 const gitUtils = require('./git-utils.js')
 
-const tmp = "tmp"
-const downloadPath = require("path").join(__dirname, tmp + ".zip");
-const contentPath = require("path").join(__dirname, tmp);
+const tmp = 'tmp'
+const downloadPath = require('path').join(__dirname, tmp + '.zip')
+const contentPath = require('path').join(__dirname, tmp)
 
-
-function parseMessage(message) {
+function parseMessage (message) {
   let received = JSON.parse(message)
   let result = {}
 
-  if (typeof received === "undefined")
-    throw Error("Invalid message format")
+  if (typeof received === 'undefined') throw Error('Invalid message format')
 
   result.sourceType = received.sourceType
   result.downloadAddress = received.downloadAddress
@@ -32,19 +30,18 @@ function parseMessage(message) {
   result.registryUsername = received.registryUsername
 
   switch (received.sourceType) {
+    case 'zip':
+      return result
 
-    case "zip":
-      break;
-
-    case "git":
-      if (typeof received.gitBranch === "undefined") {
-        result.gitBranch = "master"
+    case 'git':
+      if (typeof received.gitBranch === 'undefined') {
+        result.gitBranch = 'master'
       }
 
-      if (typeof received.gitToken === "undefined") {
-        result.gitToken = ""
+      if (typeof received.gitToken === 'undefined') {
+        result.gitToken = ''
       } else {
-        result.gitToken = received.gitToken 
+        result.gitToken = received.gitToken
       }
 
       result.gitCommitSHA = received.gitCommitSHA
@@ -53,113 +50,150 @@ function parseMessage(message) {
   return result
 }
 
-async function fetchSource(sourceType, downloadAddress, clientToken,
-  gitToken, gitBranch, gitCommitSHA) {
+async function fetchSource (
+  sourceType,
+  downloadAddress,
+  clientToken,
+  gitToken,
+  gitBranch,
+  gitCommitSHA
+) {
   try {
     await fsUtils.clean(sourceType, contentPath, downloadPath)
 
     switch (sourceType) {
-
-      case "zip":
-        await fsUtils.downloadArchive(downloadAddress, downloadPath, clientToken, 1)
+      case 'zip':
+        await fsUtils.downloadArchive(
+          downloadAddress,
+          downloadPath,
+          clientToken,
+          1
+        )
         await fsUtils.extractAsync(downloadPath, contentPath)
-        break;
+        break
 
-      case "git":
-        let repository = await gitUtils.cloneRepoBranch(downloadAddress, gitBranch, gitToken, contentPath)
+      case 'git':
+        let repository = await gitUtils.cloneRepoBranch(
+          downloadAddress,
+          gitBranch,
+          gitToken,
+          contentPath
+        )
 
-        if (typeof gitCommitSHA !== "undefined")
+        if (typeof gitCommitSHA !== 'undefined') {
           await gitUtils.checkOutCommit(repository, gitCommitSHA)
-        break;
+        }
+        break
 
       default:
-        throw Error("Invalid source type")
+        throw Error('Invalid source type')
     }
-  } catch(err) {
+  } catch (err) {
     throw Error(err)
   }
 }
 
-async function buildImage(registry, registryUsername) {
-
+async function buildImage (registry, registryUsername) {
   try {
     let imageConfiguration = JSON.parse(
       await asyncFs.readFile(`${contentPath}/wyliodrin.json`, 'utf8')
     )
 
-    let fullTag = await dockerUtils.buildAppImage(contentPath, registryUsername,
-      imageConfiguration.repository, imageConfiguration.tag)
+    let fullTag = await dockerUtils.buildAppImage(
+      contentPath,
+      registryUsername,
+      imageConfiguration.repository,
+      imageConfiguration.tag
+    )
 
     return fullTag
-  }
-  catch(err) {
+  } catch (err) {
     throw Error(err)
   }
 }
 
-
-async function pushImage(fullTag, registry, registryUsername, registryPassword) {
+async function pushImage (
+  fullTag,
+  registry,
+  registryUsername,
+  registryPassword
+) {
   try {
-    execSync(`docker login -u ${registryUsername} -p ${registryPassword} ${registry}`)
+    execSync(
+      `docker login -u ${registryUsername} -p ${registryPassword} ${registry}`
+    )
     execSync(`docker push ${fullTag}`)
-    execSync("docker logout")
-  }
-  catch(err) {
-    throw Error("Docker login or push failed")
+    execSync('docker logout')
+  } catch (err) {
+    throw Error('Docker login or push failed')
   }
 }
 
-let connection = amqp.createConnection();
-amqp_stream( {connection:connection, exchange:'rpc', routingKey:'upper'}, function ( err, rpc_stream ) {
-  rpc_stream.on( 'correlatedRequest', function (correlatedStream) {
-    correlatedStream.on( 'data', function (buf) {
+let connection = amqp.createConnection()
+amqp_stream(
+  { connection: connection, exchange: 'rpc', routingKey: 'upper' },
+  function (err, rpc_stream) {
+    rpc_stream.on('correlatedRequest', function (correlatedStream) {
+      correlatedStream.on('data', function (buf) {
+        let parameters = parseMessage(buf.toString())
 
-      let parameters = parseMessage(buf.toString())
-
-      fetchSource(parameters.sourceType, parameters.downloadAddress,
-        parameters.clientToken, parameters.gitToken, parameters.gitBranch,
-        parameters.gitCommitSHA)
-
-      .then(() => {
-        correlatedStream.write("FETCH_OK");
-        return buildImage(parameters.registry, parameters.registryUsername)
-        })
-
-      .then(fullTag => {
-        correlatedStream.write("BUILD_OK " + fullTag);
-        pushImage(fullTag, parameters.registry, parameters.registryUsername,
-          parameters.registryPassword)
-        .then(() => {
-          correlatedStream.write("PUSH_OK");
-          fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+        fetchSource(
+          parameters.sourceType,
+          parameters.downloadAddress,
+          parameters.clientToken,
+          parameters.gitToken,
+          parameters.gitBranch,
+          parameters.gitCommitSHA
+        )
           .then(() => {
-            correlatedStream.end();
+            console.log('fetch ok')
+            correlatedStream.write('FETCH_OK')
+            return buildImage(parameters.registry, parameters.registryUsername)
           })
-        })
-        .catch(err => {
-          console.error(err);
-          correlatedStream.write("ERROR " + err.toString());
-          fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-          .then(() => {
-            correlatedStream.end();
+          .then(fullTag => {
+            console.log('build ok')
+            correlatedStream.write('BUILD_OK ' + fullTag)
+            pushImage(
+              fullTag,
+              parameters.registry,
+              parameters.registryUsername,
+              parameters.registryPassword
+            )
+              .then(() => {
+                correlatedStream.write('PUSH_OK')
+                fsUtils
+                  .clean(parameters.sourceType, contentPath, downloadPath)
+                  .then(() => {
+                    correlatedStream.end()
+                  })
+              })
+              .catch(err => {
+                console.error(err)
+                correlatedStream.write('ERROR ' + err.toString())
+                fsUtils
+                  .clean(parameters.sourceType, contentPath, downloadPath)
+                  .then(() => {
+                    correlatedStream.end()
+                  })
+              })
           })
-        })
+          .catch(err => {
+            console.error(err)
+            correlatedStream.write('ERROR' + err.toString())
+            fsUtils
+              .clean(parameters.sourceType, contentPath, downloadPath)
+              .then(() => {
+                correlatedStream.end()
+              })
+          })
+          .finally(() => {
+            fsUtils
+              .clean(parameters.sourceType, contentPath, downloadPath)
+              .then(() => {
+                correlatedStream.end()
+              })
+          })
       })
-      .catch(err => {
-        console.error(err);
-        correlatedStream.write("ERROR" + err.toString());
-        fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-        .then(() => {
-          correlatedStream.end();
-        })
-      })
-      .finally(() => {
-        fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-        .then(() => {
-          correlatedStream.end();
-        })
-      })
-    });
-  });
-});
-
+    })
+  }
+)
