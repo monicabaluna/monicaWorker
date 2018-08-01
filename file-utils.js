@@ -25,7 +25,7 @@ const promisifyDownloadStream = (stream, file) =>
       resolve(checksum)
     })
     stream.on('response', function (response) {
-      if (response.statusCode / 100 != 2) return reject
+      if (response.statusCode / 100 != 2) return reject()
       checksum = response.headers['checksum']
       response.pipe(file)
     })
