@@ -144,9 +144,6 @@ async function main () {
     try {
       parameters = parseMessage(msg.content.toString())
 
-      console.log(parameters)
-      console.log(msg)
-
       await fetchSource(
         parameters.sourceType,
         parameters.downloadAddress,
@@ -202,4 +199,4 @@ async function main () {
   })
 }
 
-main().then(null, console.warn)
+main().then(null, console.error)
