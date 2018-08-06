@@ -1,10 +1,8 @@
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('worker')
 const { Docker } = require('node-docker-api')
-const execSync = require('child_process').execSync
 const fsUtils = require('./file-utils.js')
 const dockerParser = require('docker-file-parser')
-const fs = require('fs')
 const tar = require('tar-fs')
 
 const docker = new Docker()
@@ -38,18 +36,10 @@ async function fixDockerfile (dockerfilePath) {
   console.log('The file was generated!')
 }
 
-const promisifyTarStream = stream =>
-  new Promise((resolve, reject) => {
-    // stream.on('data', data => console.log(data.toString()))
-    stream.on('data', {})
-    stream.on('end', resolve)
-    stream.on('error', reject)
-  })
-
-async function buildAppImage(contentPath, username, repository, tag) {
+async function buildAppImage (contentPath, username, repository, tag) {
   let fullTag = `${username}/${repository}:${tag}`
   // fullTag = `${imageConfiguration.appId}:${imageConfiguration.version}`
-  
+
   await fixDockerfile(`${contentPath}/Dockerfile`)
 
   let tarStream = tar.pack(`${contentPath}`)

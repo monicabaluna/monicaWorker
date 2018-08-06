@@ -2,7 +2,6 @@
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('worker')
 const del = require('del')
-const execSync = require('child_process').execSync
 const fs = require('fs')
 const request = require('request')
 const sha = require('sha1')
