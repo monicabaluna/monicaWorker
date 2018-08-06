@@ -128,6 +128,66 @@ async function pushImage (
   }
 }
 
+const processTask = channel => async msg => {
+  let parameters
+
+  try {
+    parameters = parseMessage(msg.content.toString())
+
+    await fetchSource(
+      parameters.sourceType,
+      parameters.downloadAddress,
+      parameters.clientToken,
+      parameters.gitToken,
+      parameters.gitBranch,
+      parameters.gitCommitSHA
+    )
+
+    console.log('fetch ok')
+    channel.sendToQueue(msg.properties.replyTo, new Buffer('FETCH_OK'), {
+      correlationId: msg.properties.correlationId
+    })
+
+    let fullTag = await buildImage(
+      parameters.registry,
+      parameters.registryUsername
+    )
+
+    console.log('build ok')
+    channel.sendToQueue(
+      msg.properties.replyTo,
+      new Buffer(`BUILD_OK ${fullTag}`),
+      {
+        correlationId: msg.properties.correlationId
+      }
+    )
+
+    await pushImage(
+      fullTag,
+      parameters.registry,
+      parameters.registryUsername,
+      parameters.registryPassword
+    )
+
+    console.log('push ok')
+    channel.sendToQueue(msg.properties.replyTo, new Buffer('PUSH_OK'), {
+      correlationId: msg.properties.correlationId
+    })
+  } catch (err) {
+    console.error(err)
+
+    channel.sendToQueue(
+      msg.properties.replyTo,
+      new Buffer(`ERROR ${err.toString()}`),
+      {
+        correlationId: msg.properties.correlationId
+      }
+    )
+  }
+  await fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+  channel.ack(msg)
+}
+
 async function main () {
   let connection = await amqp.connect('amqp://localhost')
   var channel = await connection.createChannel()
@@ -138,65 +198,7 @@ async function main () {
   channel.prefetch(1)
   console.log(' [x] Awaiting RPC requests')
 
-  let parameters
-
-  channel.consume(queueName, async function reply (msg) {
-    try {
-      parameters = parseMessage(msg.content.toString())
-
-      await fetchSource(
-        parameters.sourceType,
-        parameters.downloadAddress,
-        parameters.clientToken,
-        parameters.gitToken,
-        parameters.gitBranch,
-        parameters.gitCommitSHA
-      )
-
-      console.log('fetch ok')
-      channel.sendToQueue(msg.properties.replyTo, new Buffer('FETCH_OK'), {
-        correlationId: msg.properties.correlationId
-      })
-
-      let fullTag = await buildImage(
-        parameters.registry,
-        parameters.registryUsername
-      )
-
-      console.log('build ok')
-      channel.sendToQueue(
-        msg.properties.replyTo,
-        new Buffer(`BUILD_OK ${fullTag}`),
-        {
-          correlationId: msg.properties.correlationId
-        }
-      )
-
-      await pushImage(
-        fullTag,
-        parameters.registry,
-        parameters.registryUsername,
-        parameters.registryPassword
-      )
-
-      console.log('push ok')
-      channel.sendToQueue(msg.properties.replyTo, new Buffer('PUSH_OK'), {
-        correlationId: msg.properties.correlationId
-      })
-    } catch (err) {
-      console.error(err)
-
-      channel.sendToQueue(
-        msg.properties.replyTo,
-        new Buffer(`ERROR ${err.toString()}`),
-        {
-          correlationId: msg.properties.correlationId
-        }
-      )
-    }
-    await fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
-    channel.ack(msg)
-  })
+  channel.consume(queueName, processTask(channel))
 }
 
 main().then(null, console.error)
