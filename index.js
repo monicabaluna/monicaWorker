@@ -1,7 +1,6 @@
 'use strict'
 
-const amqp = require('amqp')
-const amqp_stream = require('amqp-stream')
+const amqp = require('amqplib')
 const asyncFs = require('async-file')
 // const log = require('bunyan').getLogger('worker')
 const execSync = require('child_process').execSync
@@ -129,71 +128,78 @@ async function pushImage (
   }
 }
 
-let connection = amqp.createConnection()
-amqp_stream(
-  { connection: connection, exchange: 'rpc', routingKey: 'upper' },
-  function (err, rpc_stream) {
-    rpc_stream.on('correlatedRequest', function (correlatedStream) {
-      correlatedStream.on('data', function (buf) {
-        let parameters = parseMessage(buf.toString())
+async function main () {
+  let connection = await amqp.connect('amqp://localhost')
+  var channel = await connection.createChannel()
 
-        fetchSource(
-          parameters.sourceType,
-          parameters.downloadAddress,
-          parameters.clientToken,
-          parameters.gitToken,
-          parameters.gitBranch,
-          parameters.gitCommitSHA
-        )
-          .then(() => {
-            console.log('fetch ok')
-            correlatedStream.write('FETCH_OK')
-            return buildImage(parameters.registry, parameters.registryUsername)
-          })
-          .then(fullTag => {
-            console.log('build ok')
-            correlatedStream.write('BUILD_OK ' + fullTag)
-            pushImage(
-              fullTag,
-              parameters.registry,
-              parameters.registryUsername,
-              parameters.registryPassword
-            )
-              .then(() => {
-                correlatedStream.write('PUSH_OK')
-                fsUtils
-                  .clean(parameters.sourceType, contentPath, downloadPath)
-                  .then(() => {
-                    correlatedStream.end()
-                  })
-              })
-              .catch(err => {
-                console.error(err)
-                correlatedStream.write('ERROR ' + err.toString())
-                fsUtils
-                  .clean(parameters.sourceType, contentPath, downloadPath)
-                  .then(() => {
-                    correlatedStream.end()
-                  })
-              })
-          })
-          .catch(err => {
-            console.error(err)
-            correlatedStream.write('ERROR' + err.toString())
-            fsUtils
-              .clean(parameters.sourceType, contentPath, downloadPath)
-              .then(() => {
-                correlatedStream.end()
-              })
-          })
-          .finally(() => {
-            fsUtils
-              .clean(parameters.sourceType, contentPath, downloadPath)
-              .then(() => {
-                correlatedStream.end()
-              })
-          })
+  var queueName = 'build_rpc_queue'
+
+  await channel.assertQueue(queueName, { durable: false })
+  channel.prefetch(1)
+  console.log(' [x] Awaiting RPC requests')
+
+  let parameters
+
+  channel.consume(queueName, async function reply (msg) {
+    try {
+      parameters = parseMessage(msg.content.toString())
+
+      console.log(parameters)
+      console.log(msg)
+
+      await fetchSource(
+        parameters.sourceType,
+        parameters.downloadAddress,
+        parameters.clientToken,
+        parameters.gitToken,
+        parameters.gitBranch,
+        parameters.gitCommitSHA
+      )
+
+      console.log('fetch ok')
+      channel.sendToQueue(msg.properties.replyTo, new Buffer('FETCH_OK'), {
+        correlationId: msg.properties.correlationId
       })
-    })
-  }
-)
+
+      let fullTag = await buildImage(
+        parameters.registry,
+        parameters.registryUsername
+      )
+
+      console.log('build ok')
+      channel.sendToQueue(
+        msg.properties.replyTo,
+        new Buffer(`BUILD_OK ${fullTag}`),
+        {
+          correlationId: msg.properties.correlationId
+        }
+      )
+
+      await pushImage(
+        fullTag,
+        parameters.registry,
+        parameters.registryUsername,
+        parameters.registryPassword
+      )
+
+      console.log('push ok')
+      channel.sendToQueue(msg.properties.replyTo, new Buffer('PUSH_OK'), {
+        correlationId: msg.properties.correlationId
+      })
+    } catch (err) {
+      console.error(err)
+
+      channel.sendToQueue(
+        msg.properties.replyTo,
+        new Buffer(`ERROR ${err.toString()}`),
+        {
+          correlationId: msg.properties.correlationId
+        }
+      )
+    }
+    await fsUtils.clean(parameters.sourceType, contentPath, downloadPath)
+    channel.ack(msg)
+  })
+}
+
+main().then(null, console.warn)
