@@ -17,7 +17,7 @@
     "del": "^3.0.0",
     "docker-file-parser": "^1.0.3",
     "node-docker-api": "^1.1.22",
-    "nodegit": "^0.22.1",
+    "nodegit": "^0.22.2",
     "path": "^0.12.7",
     "request": "^2.87.0",
     "request-promise": "^4.2.2",
