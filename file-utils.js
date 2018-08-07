@@ -30,14 +30,6 @@ const promisifyDownloadStream = (stream, file) =>
     })
   })
 
-const pathExists = path =>
-  new Promise((resolve, reject) => {
-    fs.access(path, fs.constants.F_OK, err => {
-      if (err !== null && err.code !== 'ENOENT') return reject(err)
-      resolve(err === null)
-    })
-  })
-
 const extractAsync = (zipPath, outputPath) =>
   new Promise((resolve, reject) => {
     const extractor = unzip.Extract({ path: outputPath })
@@ -49,6 +41,7 @@ const extractAsync = (zipPath, outputPath) =>
   })
 
 async function downloadArchive (address, downloadPath, token, retriesLeft) {
+  // private archive downloader with retries count
   let file
   let checksum
   let fileContents
@@ -81,6 +74,7 @@ async function downloadArchive (address, downloadPath, token, retriesLeft) {
 }
 
 async function clean (sourceType, contentPath, downloadPath) {
+  // delete app source
   try {
     if (sourceType === 'zip') await del([downloadPath])
 
